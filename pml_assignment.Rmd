@@ -1,0 +1,109 @@
+---
+title: "pml_assignment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading Data
+
+```{r }
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+trainingset <- read.csv("pml-training.csv", na.strings=c("NA","#DIV/0!", header=TRUE))
+testingset <- read.csv("pml-testing.csv", na.strings=c("NA","#DIV/0!", header=TRUE))
+summary(trainingset$classe)
+```
+##Data partition for Cross-validation
+The training data is split into two data sets, one for training the model and one for testing the performance of our model. 
+The data is partitioned by the classe variable, which is the varible we will be predicting. The data is split into 60% for training and 40% for testing.
+
+```{r }
+inTrain <- createDataPartition(y=trainingset$classe, p = 0.60, list=FALSE)
+training <- trainingset[inTrain,]
+testing <- trainingset[-inTrain,]
+dim(training); dim(testing)
+```
+##Processing of Data
+```{r }
+training <- training[,-c(1:7)]
+nzv <- nearZeroVar(training, saveMetrics=TRUE)
+training <- training[, nzv$nzv==FALSE]
+```
+There are a lot of variables where most of the values are 'NA'. Drop variables that have 60% or more of the values as 'NA'.
+```{r }
+training_clean <- training
+for(i in 1:length(training)) {
+  if( sum( is.na( training[, i] ) ) /nrow(training) >= .6) {
+    for(j in 1:length(training_clean)) {
+      if( length( grep(names(training[i]), names(training_clean)[j]) ) == 1)  {
+        training_clean <- training_clean[ , -j]
+      }   
+    } 
+  }
+}
+# Set the new cleaned up dataset back to the old dataset name
+training <- training_clean
+```
+
+#Transform the testing data dataset
+# Get the column names in the training dataset
+```{r }
+columns <- colnames(training)
+```
+# Drop the class variable
+```{r }
+col2 <- colnames(training[,-53])
+testingset <- testingset[col2]
+dim(testingset)
+```
+##Prediction with Random Forest
+A Random Forest model is built on the training set. Then the results are evaluated on the test set
+```{r }
+set.seed(54321)
+modFit <- randomForest(classe ~ ., data=training)
+prediction <- predict(modFit, testing)
+cm <- confusionMatrix(prediction, testing$classe)
+print(cm)
+```
+```{r }
+overall.accuracy <- round(cm$overall['Accuracy'] * 100, 2)
+sam.err <- round(1 - cm$overall['Accuracy'],2)
+print(c(overall.accuracy,sam.err))
+```
+Accurary of the model is 99.35% on the testing data partitioned from the training data. The expected sample error is 0.01%.
+
+```{r }
+plot(modFit)
+```
+##Prediction with a Decision Tree
+```{r }
+set.seed(54321)
+modFit2 <- rpart(classe ~ ., data=training, method="class")
+prediction2 <- predict(modFit2, testing, type="class")
+cm2 <- confusionMatrix(prediction2, testing$classe)
+print(cm2)
+```
+```{r }
+overall.accuracy2 <- round(cm2$overall['Accuracy'] * 100, 2)
+sam.err2 <- round(1 - cm2$overall['Accuracy'],2)
+print(c(overall.accuracy2,sam.err2))
+```
+Accurary of the model is 74.06% on the testing data partitioned from the training data. The expected sample error is 0.26%.
+
+##Plot the classification tree model
+```{r }
+rpart.plot(modFit2, main="Classification Tree", extra=102, under=TRUE, faclen=0)
+```
+##Prediction on the Test Data
+
+Overall Accuracy of Random Forest model is higher than decision tree model. So we will use the Random Forest model to make the predictions on the test data.
+```{r }
+final_prediction <- predict(modFit, testingset, type="class")
+print(final_prediction)
+```
